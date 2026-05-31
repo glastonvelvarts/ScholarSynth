@@ -1,0 +1,5 @@
+.venv/
+*.pdf
+uv.lock
+pyproject.toml
+__pycache__/
