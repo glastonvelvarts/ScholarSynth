@@ -1,7 +1,7 @@
 """
 This script reads a PDF file and extracts the text.
 """
-import fitz
+import pymupdf as fitz
 import os
 import argparse
 import logging
@@ -25,3 +25,7 @@ def main():
     args=parser.parse_args()
     text=read_pdf(args.pdf_path)
     logger.info(f"Extracted {len(text)} characters from {args.pdf_path}")
+    return text
+
+if __name__ == "__main__":
+    main()
