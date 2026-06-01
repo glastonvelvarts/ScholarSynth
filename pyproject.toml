@@ -10,3 +10,6 @@ dependencies = [
     "logger>=1.4",
     "pymupdf>=1.27.2.3",
 ]
+
+[project.optional-dependencies]
+vllm = ["vllm>=0.8.0"]
