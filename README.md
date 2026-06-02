@@ -65,3 +65,13 @@ wsl -d Ubuntu -- bash -lc "cd '/mnt/c/Users/glast/OneDrive/Desktop/PaperContext'
 ```
 
 Replace `Ubuntu` with your distro name from `wsl -l -v`.
+
+'''
+reader.py
+    ↓
+chunker.py
+    ↓
+embedder.py
+    ↓
+milvus.py
+'''

@@ -3,3 +3,6 @@
 uv.lock
 pyproject.toml
 __pycache__/
+outputs/
+Project_api_key.txt
+chunked_data/

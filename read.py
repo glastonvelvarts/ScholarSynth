@@ -1,44 +1,65 @@
-"""
-This script reads a PDF file and extracts the text.
-"""
-import pymupdf as fitz
-import os
+"""CLI entrypoint for PDF extraction."""
+
+from __future__ import annotations
+
 import argparse
 import logging
+import sys
+from pathlib import Path
 
-logging.basicConfig(level=logging.INFO)
+from papercontext.exceptions import PaperContextError
+from papercontext.pdf_reader import read_pdf
+from papercontext.writer import default_output_path, save_document
 
-logger=logging.getLogger(__name__)
-
-
-def read_pdf(pdf_path):
-    """Read a PDF and return a structured document with per-page text."""
-    document = {
-        "document_name": os.path.basename(pdf_path),
-        "pages": [],
-    }
-    with fitz.open(pdf_path) as doc:
-        for page_num, page in enumerate(doc, start=1):
-            document["pages"].append({
-                "page": page_num,
-                "text": page.get_text("text"),
-            })
-    return document
+logger = logging.getLogger(__name__)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Read a PDF file and extract the text.")
-    parser.add_argument("pdf_path", type=str, help="The path to the PDF file.")
-    args = parser.parse_args()
-    document = read_pdf(args.pdf_path)
-    char_count = sum(len(p["text"]) for p in document["pages"])
-    logger.info(
-        "Extracted %d characters across %d pages from %s",
-        char_count,
-        len(document["pages"]),
-        document["document_name"],
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Extract structured text from a PDF for PaperContext.",
     )
-    return document
+    parser.add_argument("pdf_path", help="Path to the PDF file.")
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        default="outputs",
+        help="Directory for JSON output (default: outputs).",
+    )
+    parser.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="Skip header/footer removal and whitespace normalization.",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging verbosity (default: INFO).",
+    )
+    return parser
+
+
+def configure_logging(level: str) -> None:
+    logging.basicConfig(
+        level=getattr(logging, level),
+        format="%(levelname)s:%(name)s:%(message)s",
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    configure_logging(args.log_level)
+
+    try:
+        document = read_pdf(args.pdf_path, clean=not args.no_clean)
+        output_path = default_output_path(document["document_name"], args.output_dir)
+        save_document(document, output_path)
+    except PaperContextError as exc:
+        logger.error("%s", exc)
+        return 1
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
