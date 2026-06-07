@@ -1,77 +1,284 @@
 # PaperContext
 
-Read PDFs and run LLM tooling. **vLLM is Linux-only** — use WSL2 on Windows.
+PaperContext is a research paper RAG (Retrieval-Augmented Generation) system that enables users to upload one or more research papers, generate embeddings, store them in a vector database, and perform semantic retrieval over the uploaded documents.
 
-## Windows (PDF only)
+## Current Pipeline
 
-```powershell
-uv run read.py Automating_Customer_Service_Using_Langchain.pdf
-```
-
-## WSL2 + vLLM
-
-### 1. One-time: enable WSL2
-
-In **PowerShell (Admin)**:
-
-```powershell
-wsl --install -d Ubuntu
-```
-
-Reboot if prompted. Set your Ubuntu username/password on first launch.
-
-### 2. One-time: NVIDIA GPU in WSL
-
-1. Install the latest [NVIDIA driver for Windows](https://www.nvidia.com/Download/index.aspx) (must support WSL2).
-2. Reboot.
-3. In Ubuntu:
-
-```bash
-nvidia-smi
-```
-
-If that works, the GPU is available in WSL.
-
-### 3. Install project + vLLM (inside Ubuntu)
-
-From Windows, open Ubuntu, then:
-
-```bash
-cd /mnt/c/Users/glast/OneDrive/Desktop/PaperContext
-bash scripts/wsl-setup.sh
-```
-
-> **Tip:** OneDrive under `/mnt/c` can be slow. For heavy vLLM use, copy the repo to `~/PaperContext` and run the script there.
-
-### 4. Daily use (WSL)
-
-```bash
-cd /mnt/c/Users/glast/OneDrive/Desktop/PaperContext   # or ~/PaperContext
-
-uv run read.py Automating_Customer_Service_Using_Langchain.pdf
-
-# Example: start OpenAI-compatible server (adjust model name)
-uv run python -m vllm.entrypoints.openai.api_server \
-  --model meta-llama/Llama-3.2-3B-Instruct \
-  --host 0.0.0.0 --port 8000
-```
-
-From Windows, call `http://localhost:8000` while the server runs in WSL.
-
-### Optional: run setup from PowerShell
-
-```powershell
-wsl -d Ubuntu -- bash -lc "cd '/mnt/c/Users/glast/OneDrive/Desktop/PaperContext' && bash scripts/wsl-setup.sh"
-```
-
-Replace `Ubuntu` with your distro name from `wsl -l -v`.
-
-'''
-reader.py
-    ↓
+```text
+PDF
+ ↓
+pdf_reader.py
+ ↓
 chunker.py
-    ↓
-embedder.py
-    ↓
-milvus.py
-'''
+ ↓
+embedder.py (BGE-M3)
+ ↓
+Milvus
+ ↓
+Semantic Search
+```
+
+## Features
+
+* PDF Extraction using PyMuPDF
+* Custom Chunking Pipeline
+* BGE-M3 Embeddings
+* Milvus Vector Database
+* HNSW Indexing
+* Cosine Similarity Search
+* GPU Acceleration (CUDA)
+* Docker-based Deployment
+
+---
+
+## Project Structure
+
+```text
+PaperContext/
+│
+├── chunked_data/
+│   └── chunked.json
+│
+├── embedded_data/
+│   └── embedded_chunks.json
+│
+├── outputs/
+│
+├── papercontext/
+│   ├── pdf_reader.py
+│   ├── page_extractor.py
+│   ├── text_cleaner.py
+│   ├── chunker.py
+│   ├── embedder.py
+│   │
+│   └── vectorstore/
+│       ├── client.py
+│       ├── schema.py
+│       └── ingest.py
+│
+├── tests/
+├── docker-compose.yml
+├── pyproject.toml
+└── README.md
+```
+
+---
+
+## Installation
+
+### Clone Repository
+
+```bash
+git clone https://github.com/<username>/PaperContext.git
+cd PaperContext
+```
+
+### Install Dependencies
+
+```bash
+uv sync
+```
+
+Or install packages manually:
+
+```bash
+uv add pymupdf
+uv add sentence-transformers
+uv add pymilvus
+uv add torch
+```
+
+---
+
+## PDF Extraction
+
+Run the PDF reader:
+
+```bash
+uv run python -m papercontext.pdf_reader <pdf_file>
+```
+
+Example:
+
+```bash
+uv run python -m papercontext.pdf_reader Automating_Customer_Service_Using_Langchain.pdf
+```
+
+Output:
+
+```text
+outputs/
+└── Automating_Customer_Service_Using_Langchain.pdf.json
+```
+
+---
+
+## Chunk Documents
+
+Generate chunks from extracted documents:
+
+```bash
+uv run python -m papercontext.chunker
+```
+
+Output:
+
+```text
+chunked_data/
+└── chunked.json
+```
+
+Default Configuration:
+
+```python
+CHUNK_SIZE = 1200
+CHUNK_OVERLAP = 200
+```
+
+---
+
+## Generate Embeddings
+
+Embedding Model:
+
+```text
+BAAI/bge-m3
+```
+
+Generate embeddings:
+
+```bash
+uv run python -m papercontext.embedder
+```
+
+Output:
+
+```text
+embedded_data/
+└── embedded_chunks.json
+```
+
+GPU acceleration is automatically enabled when CUDA is available.
+
+---
+
+## Start Milvus
+
+Launch Milvus using Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+Verify running containers:
+
+```bash
+docker ps
+```
+
+Expected containers:
+
+```text
+milvus-standalone
+milvus-etcd
+milvus-minio
+```
+
+---
+
+## Ingest Embeddings into Milvus
+
+Insert generated embeddings into the vector database:
+
+```bash
+uv run python -m papercontext.vectorstore.ingest
+```
+
+Example Output:
+
+```text
+Connected to Milvus
+Created collection 'papersynth'
+Inserted 18 chunks successfully
+Collection now contains 18 entities
+```
+
+---
+
+## Milvus Configuration
+
+### Collection
+
+```text
+papersynth
+```
+
+### Schema
+
+```text
+chunk_id
+document_name
+page
+text
+embedding
+```
+
+### Embedding Dimension
+
+```text
+1024
+```
+
+### Similarity Metric
+
+```text
+COSINE
+```
+
+### Index Type
+
+```text
+HNSW
+```
+
+---
+
+## Current Status
+
+### ✅ Completed
+
+* PDF Extraction
+* Document Chunking
+* Embedding Generation
+* Milvus Integration
+* Vector Ingestion
+
+### 🚧 Next Steps
+
+* Semantic Retrieval
+* Query Embeddings
+* Top-K Search
+* Multi-PDF Comparison
+* Session-Based Isolation
+* Reranking
+* LLM Integration
+* Citation Generation
+
+---
+
+## Technology Stack
+
+* Python
+* PyMuPDF
+* Sentence Transformers
+* BAAI BGE-M3
+* Milvus
+* Docker
+* PyTorch
+* UV Package Manager
+
+---
+
+## License
+
+This project is licensed under the MIT License.
