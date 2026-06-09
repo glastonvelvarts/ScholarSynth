@@ -7,16 +7,16 @@ import logging
 import sys
 from pathlib import Path
 
-from papercontext.exceptions import PaperContextError
-from papercontext.pdf_reader import read_pdf
-from papercontext.writer import default_output_path, save_document
+from scholarsynth.exceptions import scholarsynthError
+from scholarsynth.pdf_reader import read_pdf
+from scholarsynth.writer import default_output_path, save_document
 
 logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract structured text from a PDF for PaperContext.",
+        description="Extract structured text from a PDF for scholarsynth.",
     )
     parser.add_argument("pdf_path", help="Path to the PDF file.")
     parser.add_argument(
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         document = read_pdf(args.pdf_path, clean=not args.no_clean)
         output_path = default_output_path(document["document_name"], args.output_dir)
         save_document(document, output_path)
-    except PaperContextError as exc:
+    except scholarsynthError as exc:
         logger.error("%s", exc)
         return 1
 

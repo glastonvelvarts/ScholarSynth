@@ -2,8 +2,8 @@
 
 import pytest
 
-from papercontext.exceptions import PDFNotFoundError, PDFValidationError
-from papercontext.pdf_reader import _validate_pdf_path
+from scholarsynth.exceptions import PDFNotFoundError, PDFValidationError
+from scholarsynth.pdf_reader import _validate_pdf_path
 
 
 def test_validate_pdf_path_missing_file(tmp_path):

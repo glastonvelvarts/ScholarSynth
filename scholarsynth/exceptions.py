@@ -1,17 +1,17 @@
-"""Domain-specific exceptions for PaperContext."""
+"""Domain-specific exceptions for scholarsynth."""
 
 
-class PaperContextError(Exception):
-    """Base exception for PaperContext operations."""
+class scholarsynthError(Exception):
+    """Base exception for scholarsynth operations."""
 
 
-class PDFNotFoundError(PaperContextError, FileNotFoundError):
+class PDFNotFoundError(scholarsynthError, FileNotFoundError):
     """Raised when the requested PDF path does not exist."""
 
 
-class PDFValidationError(PaperContextError, ValueError):
+class PDFValidationError(scholarsynthError, ValueError):
     """Raised when the path is not a valid PDF file."""
 
 
-class PDFReadError(PaperContextError):
+class PDFReadError(scholarsynthError):
     """Raised when PDF parsing fails."""

@@ -1,5 +1,5 @@
 from pymilvus import Collection
-from papercontext.vectorstore import client
+from scholarsynth.vectorstore import client
 client.connect_to_milvus()
 collection = Collection("papersynth")
 collection.load()

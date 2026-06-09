@@ -5,7 +5,7 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-echo "==> PaperContext WSL setup"
+echo "==> scholarsynth WSL setup"
 echo "    Project: $PROJECT_ROOT"
 
 if ! command -v nvidia-smi &>/dev/null; then

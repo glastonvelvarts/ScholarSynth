@@ -1,6 +1,6 @@
 """Tests for text normalization and header/footer removal."""
 
-from papercontext.text_cleaner import (
+from scholarsynth.text_cleaner import (
     clean_page_texts,
     find_repeated_lines,
     fix_hyphenated_line_breaks,

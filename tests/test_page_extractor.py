@@ -1,6 +1,6 @@
 """Tests for column-aware page extraction."""
 
-from papercontext.page_extractor import _is_two_column_layout
+from scholarsynth.page_extractor import _is_two_column_layout
 
 
 def test_is_two_column_layout_detects_split_columns():

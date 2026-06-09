@@ -1,6 +1,6 @@
 # Run in PowerShell AS ADMINISTRATOR:
 #   Set-ExecutionPolicy -Scope Process Bypass -Force
-#   & "C:\Users\glast\OneDrive\Desktop\PaperContext\scripts\wsl-repair.ps1"
+#   & "C:\Users\glast\OneDrive\Desktop\scholarsynth\scripts\wsl-repair.ps1"
 #
 # Then reboot, install WSL MSI (see script output), reboot again.
 

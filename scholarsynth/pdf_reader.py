@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pymupdf as fitz
 
-from papercontext.exceptions import PDFNotFoundError, PDFReadError, PDFValidationError
-from papercontext.models import Document, Page
-from papercontext.page_extractor import extract_page_text
-from papercontext.text_cleaner import clean_page_texts
+from scholarsynth.exceptions import PDFNotFoundError, PDFReadError, PDFValidationError
+from scholarsynth.models import Document, Page
+from scholarsynth.page_extractor import extract_page_text
+from scholarsynth.text_cleaner import clean_page_texts
 
 logger = logging.getLogger(__name__)
 

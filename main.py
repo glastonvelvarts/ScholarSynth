@@ -1,12 +1,12 @@
-from papercontext.vectorstore import client
-from papercontext.vectorstore import schema
-from papercontext.vectorstore import ingest
+from scholarsynth.vectorstore import client
+from scholarsynth.vectorstore import schema
+from scholarsynth.vectorstore import ingest
 import logging
 import os
 
 
 def main():
-    print("Hello from papercontext!")
+    print("Hello from scholarsynth!")
 
 
 if __name__ == "__main__":

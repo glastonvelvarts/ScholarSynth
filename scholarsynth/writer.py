@@ -6,7 +6,7 @@ import json
 import logging
 from pathlib import Path
 
-from papercontext.models import Document
+from scholarsynth.models import Document
 
 logger = logging.getLogger(__name__)
 

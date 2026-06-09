@@ -8,7 +8,7 @@ from pymilvus import (
     utility
 )
 
-from papercontext.vectorstore.schema import (
+from scholarsynth.vectorstore.schema import (
     COLLECTION_NAME,
     SCHEMA,
     INDEX_PARAMS

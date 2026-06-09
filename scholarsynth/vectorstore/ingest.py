@@ -4,7 +4,7 @@ import os
 
 from pymilvus import Collection
 
-from papercontext.vectorstore.client import get_collection
+from scholarsynth.vectorstore.client import get_collection
 
 logger = logging.getLogger(__name__)
 

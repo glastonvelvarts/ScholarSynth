@@ -1,6 +1,6 @@
-# PaperContext
+# scholarsynth
 
-PaperContext is a research paper RAG (Retrieval-Augmented Generation) system that enables users to upload one or more research papers, generate embeddings, store them in a vector database, and perform semantic retrieval over the uploaded documents.
+scholarsynth is a research paper RAG (Retrieval-Augmented Generation) system that enables users to upload one or more research papers, generate embeddings, store them in a vector database, and perform semantic retrieval over the uploaded documents.
 
 ## Current Pipeline
 
@@ -34,7 +34,7 @@ Semantic Search
 ## Project Structure
 
 ```text
-PaperContext/
+scholarsynth/
 │
 ├── chunked_data/
 │   └── chunked.json
@@ -44,7 +44,7 @@ PaperContext/
 │
 ├── outputs/
 │
-├── papercontext/
+├── scholarsynth/
 │   ├── pdf_reader.py
 │   ├── page_extractor.py
 │   ├── text_cleaner.py
@@ -69,8 +69,8 @@ PaperContext/
 ### Clone Repository
 
 ```bash
-git clone https://github.com/<username>/PaperContext.git
-cd PaperContext
+git clone https://github.com/<username>/scholarsynth.git
+cd scholarsynth
 ```
 
 ### Install Dependencies
@@ -95,13 +95,13 @@ uv add torch
 Run the PDF reader:
 
 ```bash
-uv run python -m papercontext.pdf_reader <pdf_file>
+uv run python -m scholarsynth.pdf_reader <pdf_file>
 ```
 
 Example:
 
 ```bash
-uv run python -m papercontext.pdf_reader Automating_Customer_Service_Using_Langchain.pdf
+uv run python -m scholarsynth.pdf_reader Automating_Customer_Service_Using_Langchain.pdf
 ```
 
 Output:
@@ -118,7 +118,7 @@ outputs/
 Generate chunks from extracted documents:
 
 ```bash
-uv run python -m papercontext.chunker
+uv run python -m scholarsynth.chunker
 ```
 
 Output:
@@ -148,7 +148,7 @@ BAAI/bge-m3
 Generate embeddings:
 
 ```bash
-uv run python -m papercontext.embedder
+uv run python -m scholarsynth.embedder
 ```
 
 Output:
@@ -191,7 +191,7 @@ milvus-minio
 Insert generated embeddings into the vector database:
 
 ```bash
-uv run python -m papercontext.vectorstore.ingest
+uv run python -m scholarsynth.vectorstore.ingest
 ```
 
 Example Output:
