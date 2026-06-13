@@ -7,27 +7,33 @@ scholarsynth is a research paper RAG (Retrieval-Augmented Generation) system tha
 ```text
 PDF
  ↓
-pdf_reader.py
+pdf_reader.py            # column-aware text + table extraction (PyMuPDF)
  ↓
-chunker.py
+chunker.py               # semantic chunking + typed chunks
+                         #   prose | table | reference | metadata
+                         # citations preserved separately
  ↓
-embedder.py (BGE-M3)
+embedder.py (BGE-M3)     # embeds citation-stripped text
  ↓
-Milvus
+Milvus (HNSW, COSINE)    # vector store + typed metadata
  ↓
-Semantic Search
+retrieval/retriever.py   # dense ANN -> CrossEncoder rerank
+                         #   + chunk-type filter
+                         #   + low-confidence gating
 ```
 
 ## Features
 
-* PDF Extraction using PyMuPDF
-* Custom Chunking Pipeline
-* BGE-M3 Embeddings
-* Milvus Vector Database
-* HNSW Indexing
-* Cosine Similarity Search
-* GPU Acceleration (CUDA)
-* Docker-based Deployment
+* Column-aware PDF extraction with table detection (markdown output)
+* Semantic sentence-boundary chunking, not fixed character windows
+* Typed chunks: prose / table / reference / metadata
+* Citation extraction — embeddings use clean text, originals kept for display
+* BGE-M3 dense embeddings (multilingual, 1024-dim, normalized)
+* Optional BGE-Reranker-v2-m3 cross-encoder rerank
+* Low-confidence threshold returns "no match" instead of misleading top hits
+* Configurable query instruction prefix (for E5 / jina / older BGE models)
+* Milvus 2.5 (HNSW, COSINE) with strict schema
+* GPU acceleration when CUDA is available
 
 ---
 
@@ -131,8 +137,23 @@ chunked_data/
 Default Configuration:
 
 ```python
-CHUNK_SIZE = 1200
-CHUNK_OVERLAP = 200
+DEFAULT_MAX_CHUNK_CHARS = 1500     # hard cap per chunk
+DEFAULT_MIN_CHUNK_CHARS = 200      # merge small chunks under this
+DEFAULT_BREAKPOINT_PERCENTILE = 90 # split where embedding distance is in the top 10%
+```
+
+Each chunk also stores:
+
+```python
+{
+  "chunk_type": "prose" | "table" | "reference" | "metadata",
+  "text":            "...",           # original text (for display)
+  "text_clean":      "...",           # citation-stripped (for embedding)
+  "citations":       ["[1]", "(Smith, 2020)"],
+  "table_markdown":  "| Model | F1 |\n| ...",  # only for tables
+  "section":         "IV. RESULTS",
+  "page": 3, "page_end": 4
+}
 ```
 
 ---
@@ -253,16 +274,68 @@ HNSW
 * Milvus Integration
 * Vector Ingestion
 
+### ✅ Recently Added
+
+* Table-aware PDF extraction
+* Semantic sentence-boundary chunking
+* Typed chunks (prose / table / reference / metadata)
+* Citation extraction and preservation
+* CrossEncoder reranking
+* Low-confidence gating
+
 ### 🚧 Next Steps
 
-* Semantic Retrieval
-* Query Embeddings
-* Top-K Search
-* Multi-PDF Comparison
-* Session-Based Isolation
-* Reranking
-* LLM Integration
-* Citation Generation
+* Hybrid retrieval (BM25 + dense fusion)
+* Multi-PDF comparison and session isolation
+* LLM answer synthesis with citation attribution
+* Reference resolution: `[1]` → full bibliographic entry
+* Migrate Milvus stack to single-node Qdrant for simpler ops
+
+## Retrieval Configuration
+
+```python
+from scholarsynth.retrieval.retriever import retrieve, RetrievalConfig
+
+response = retrieve(
+    query="how were the models evaluated?",
+    config=RetrievalConfig(
+        top_k=5,
+        candidate_k=20,             # candidates fetched before rerank
+        score_threshold=0.45,       # dense score under this -> "no match"
+        rerank=True,                # BGE-reranker-v2-m3 cross-encoder
+        exclude_chunk_types=("metadata",),
+        document_filter=None,       # or "Some_Paper.pdf"
+    ),
+)
+
+if not response.confident:
+    print(response.message)        # honest "not found" instead of garbage
+for chunk in response.results:
+    print(chunk.chunk_type, chunk.page, chunk.text[:120])
+```
+
+Environment overrides:
+
+```bash
+export SCHOLARSYNTH_MILVUS_URI=http://localhost:19530
+export SCHOLARSYNTH_QUERY_PREFIX=""           # set for E5/jina models
+export SCHOLARSYNTH_SCORE_THRESHOLD=0.45
+export SCHOLARSYNTH_RERANK=1                  # 0 to disable
+```
+
+## Resetting the Index
+
+The Milvus schema changed (new `chunk_type`, `table_markdown`, `page_end`,
+`section` fields). After pulling these changes:
+
+```bash
+uv run python -m scholarsynth.vectorstore.drop_collection
+docker compose restart milvus-standalone     # optional, only if cache is stale
+uv run python -m scholarsynth.pdf_reader <pdf>
+uv run python -m scholarsynth.chunker
+uv run python -m scholarsynth.embedder
+uv run python -m scholarsynth.vectorstore.ingest
+```
 
 ---
 

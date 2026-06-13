@@ -9,3 +9,17 @@ chunked_data/
 chunked_data
 embedded_data/
 scripts/
+.DS_Store
+Frontend/node_modules/
+Frontend/dist/
+Frontend/dist-ssr/
+Frontend/*.local
+Frontend/.vscode/
+Frontend/.idea/
+Frontend/.DS_Store
+Frontend/.env
+Frontend/package-lock.json
+Frontend/pnpm-lock.yaml
+Frontend/yarn.lock
+Frontend/uv.lock
+Frontend/.bolt/

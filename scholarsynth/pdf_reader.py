@@ -1,4 +1,4 @@
-"""PDF text extraction with validation and optional cleaning."""
+"""PDF text + table extraction with validation and optional cleaning."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 import pymupdf as fitz
 
 from scholarsynth.exceptions import PDFNotFoundError, PDFReadError, PDFValidationError
-from scholarsynth.models import Document, Page
-from scholarsynth.page_extractor import extract_page_text
+from scholarsynth.models import Document, Page, TableBlock
+from scholarsynth.page_extractor import extract_page_content
 from scholarsynth.text_cleaner import clean_page_texts
 
 logger = logging.getLogger(__name__)
@@ -28,26 +28,21 @@ def _validate_pdf_path(pdf_path: str | Path) -> Path:
     return path
 
 
-def _extract_raw_page_texts(doc: fitz.Document) -> list[str]:
-    """Extract plain text from each page with column-aware reading order."""
-    return [extract_page_text(page) for page in doc]
+def _extract_raw_pages(doc: fitz.Document) -> list[dict]:
+    return [extract_page_content(page) for page in doc]
 
 
 def read_pdf(pdf_path: str | Path, *, clean: bool = True) -> Document:
     """
-    Read a PDF and return a structured document with per-page text.
+    Read a PDF and return a structured document with per-page prose and tables.
 
     Args:
         pdf_path: Path to the PDF file.
-        clean: When True, remove repeated headers/footers and normalize whitespace.
+        clean: When True, remove repeated headers/footers and normalize whitespace
+            for the prose stream. Tables are kept verbatim either way.
 
     Returns:
         Document dict with document_name, metadata, and pages.
-
-    Raises:
-        PDFNotFoundError: If the file does not exist.
-        PDFValidationError: If the path is not a PDF file.
-        PDFReadError: If the PDF cannot be opened or parsed.
     """
     path = _validate_pdf_path(pdf_path)
 
@@ -56,13 +51,20 @@ def read_pdf(pdf_path: str | Path, *, clean: bool = True) -> Document:
             if doc.page_count == 0:
                 raise PDFReadError(f"PDF has no pages: {path}")
 
-            raw_texts = _extract_raw_page_texts(doc)
+            raw_pages = _extract_raw_pages(doc)
+            raw_texts = [item["text"] for item in raw_pages]
             page_texts = clean_page_texts(raw_texts) if clean else raw_texts
 
-            pages: list[Page] = [
-                {"page": page_num, "text": text}
-                for page_num, text in enumerate(page_texts, start=1)
-            ]
+            pages: list[Page] = []
+            for page_num, (text, raw) in enumerate(zip(page_texts, raw_pages), start=1):
+                tables: list[TableBlock] = raw.get("tables", [])
+                pages.append(
+                    {
+                        "page": page_num,
+                        "text": text,
+                        "tables": tables,
+                    }
+                )
     except (PDFNotFoundError, PDFValidationError, PDFReadError):
         raise
     except fitz.FileDataError as exc:
@@ -71,6 +73,8 @@ def read_pdf(pdf_path: str | Path, *, clean: bool = True) -> Document:
         raise PDFReadError(f"Unexpected error reading PDF: {path}") from exc
 
     total_characters = sum(len(page["text"]) for page in pages)
+    total_tables = sum(len(page.get("tables", [])) for page in pages)
+
     document: Document = {
         "document_name": path.name,
         "metadata": {
@@ -83,8 +87,9 @@ def read_pdf(pdf_path: str | Path, *, clean: bool = True) -> Document:
     }
 
     logger.info(
-        "Extracted %d characters across %d pages from %s (cleaned=%s)",
+        "Extracted %d characters and %d tables across %d pages from %s (cleaned=%s)",
         total_characters,
+        total_tables,
         len(pages),
         document["document_name"],
         clean,
