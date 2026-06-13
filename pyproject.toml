@@ -11,11 +11,19 @@ dependencies = [
     "pymilvus>=3.0.0",
     "pymupdf>=1.27.2.3",
     "sentence-transformers>=5.5.1",
+    "vllm>=0.22.0",
 ]
 
 [project.optional-dependencies]
 vllm = ["vllm>=0.8.0"]
 dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scholarsynth"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

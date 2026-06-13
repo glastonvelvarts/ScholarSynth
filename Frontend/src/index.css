@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-base:     #fafaf0;
+    --bg-surface:  #fefef9;
+    --bg-elevated: #f5f5e8;
+    --border:      #d4d4aa;
+    --text-primary:   #1a2e1a;
+    --text-secondary: #4a6741;
+    --text-muted:     #7a8f78;
+  }
+  .dark {
+    --bg-base:     #0b1a10;
+    --bg-surface:  #0f2318;
+    --bg-elevated: #152d1e;
+    --border:      #1f4530;
+    --text-primary:   #e8f5e4;
+    --text-secondary: #9ed99a;
+    --text-muted:     #567a52;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply font-sans antialiased;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  ::selection { @apply bg-forest-200 text-forest-900; }
+  .dark ::selection { @apply bg-forest-800 text-forest-100; }
+}
+
+@layer components {
+  /* ── Surfaces ── */
+  .surface        { background: var(--bg-surface); }
+  .surface-elevated { background: var(--bg-elevated); }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    @apply rounded-2xl shadow-card transition-all duration-200;
+  }
+  .card-hover { @apply hover:shadow-card-hover hover:-translate-y-0.5 cursor-pointer; }
+
+  /* ── Buttons ── */
+  .btn { @apply inline-flex items-center justify-center font-semibold rounded-xl transition-all duration-150 select-none; }
+
+  .btn-primary {
+    @apply btn bg-forest-700 text-white hover:bg-forest-800 active:bg-forest-900;
+    @apply focus:outline-none focus:ring-2 focus:ring-forest-500/40 focus:ring-offset-2;
+    @apply dark:bg-forest-600 dark:hover:bg-forest-500;
+  }
+  .btn-amber {
+    @apply btn bg-amber-400 text-amber-950 hover:bg-amber-300 active:bg-amber-500;
+    @apply focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:ring-offset-2;
+    @apply dark:bg-amber-500 dark:hover:bg-amber-400 dark:text-amber-950;
+  }
+  .btn-secondary {
+    @apply btn bg-forest-100 text-forest-800 hover:bg-forest-200;
+    @apply dark:bg-dark-elevated dark:text-forest-300 dark:hover:bg-dark-muted;
+  }
+  .btn-ghost {
+    @apply btn text-forest-700 hover:bg-forest-100;
+    @apply dark:text-forest-300 dark:hover:bg-dark-card;
+  }
+
+  /* ── Inputs ── */
+  .input-base {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    @apply w-full px-4 py-3 rounded-xl placeholder:text-[color:var(--text-muted)];
+    @apply focus:outline-none focus:ring-2 focus:ring-forest-500/30 focus:border-forest-500 transition-all duration-150;
+  }
+
+  /* ── Badges ── */
+  .badge { @apply inline-flex items-center rounded-full font-medium; }
+
+  /* ── Scrollbar ── */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 5px; height: 5px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { border-radius: 9999px; background: var(--border); }
+}
+
+@layer utilities {
+  .text-primary   { color: var(--text-primary);   }
+  .text-secondary { color: var(--text-secondary);  }
+  .text-muted     { color: var(--text-muted);      }
+  .border-theme   { border-color: var(--border);   }
+}

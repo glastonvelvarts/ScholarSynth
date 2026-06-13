@@ -49,8 +49,13 @@ def load_model():
     )
 
     return model
-def embed_chunks(chunks,model):
-    texts=[chunk["text"] for chunk in chunks]
+def _embedding_text(chunk: dict) -> str:
+    """Prefer citation-stripped text for embedding when available."""
+    return chunk.get("text_clean") or chunk["text"]
+
+
+def embed_chunks(chunks, model):
+    texts = [_embedding_text(chunk) for chunk in chunks]
     try:
         logger.info("text encoding started....")
         embeddings = model.encode(
