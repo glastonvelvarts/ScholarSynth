@@ -39,14 +39,13 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
 
           <nav className="hidden md:flex items-center gap-1">
-            {['Features', 'Use Cases', 'Pricing'].map((l) => (
+            {['Features', 'Use Cases'].map((l) => (
               <button key={l} className="btn-ghost px-4 py-2 text-sm text-[color:var(--text-secondary)]">{l}</button>
             ))}
           </nav>
 
           <div className="flex items-center gap-2">
-            <button className="btn-ghost px-4 py-2 text-sm hidden sm:flex">Sign in</button>
-            <button onClick={() => onNavigate('workspace')} className="btn-primary px-4 py-2 text-sm">Get started free</button>
+            <button onClick={() => onNavigate('workspace')} className="btn-primary px-4 py-2 text-sm">Get started</button>
             <ThemeToggle />
           </div>
         </div>
@@ -57,7 +56,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
         <motion.div {...fadeUp(0)}>
           <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-amber-300/60 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-xs font-semibold mb-7">
             <Sparkles className="w-3.5 h-3.5" />
-            Now in open beta — free forever for academics
+            AI-powered research synthesis
           </span>
         </motion.div>
 
@@ -206,7 +205,7 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <button onClick={() => onNavigate('workspace')} className="btn-primary px-8 py-3.5 text-base gap-2 shadow-glow">
-                Get started — it's free <ArrowRight className="w-4 h-4" />
+                Get started <ArrowRight className="w-4 h-4" />
               </button>
               <button onClick={() => onNavigate('search')} className="btn-secondary px-8 py-3.5 text-base">
                 Explore papers first

@@ -54,6 +54,7 @@ export interface SearchResult {
   relevanceScore: number;
   isOpenAccess: boolean;
   pdfUrl?: string;
+  url?: string;
 }
 
 export interface SuggestedPrompt {

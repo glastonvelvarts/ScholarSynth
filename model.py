@@ -1,6 +1,12 @@
 """
 Modal deployment: vLLM OpenAI-compatible server on L40S (port 8000).
 
+Auth (Modal reads ~/.modal.toml, not .env):
+    modal token set --token-id <id> --token-secret <secret>
+
+    On WSL, if you sourced a Windows .env and see Invalid metadata ...\\r,
+    recreate ~/.modal.toml or run: dos2unix .env
+
 Deploy:
     modal deploy model.py
 

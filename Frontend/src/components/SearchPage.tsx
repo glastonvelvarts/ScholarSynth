@@ -1,18 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, X, Filter, BookmarkPlus, ExternalLink,
-  FileText, Calendar, Building2, ChevronLeft, Leaf,
+  FileText, Calendar, Building2, ChevronLeft, BookMarked,
+  AlertCircle,
 } from 'lucide-react';
 import { Badge, Card } from './ui';
 import { ThemeToggle } from './ui/ThemeToggle';
 import type { SearchResult, AppView } from '../types';
 import { TRENDING_TOPICS } from '../types';
-import { generateId } from '../lib/utils';
+import { searchPapers } from '../lib/api';
 
 interface SearchPageProps {
   onNavigate: (v: AppView) => void;
-  onAddToWorkspace: (r: SearchResult) => void;
+  onAddToWorkspace: (results: SearchResult[]) => void;
 }
 
 export function SearchPage({ onNavigate, onAddToWorkspace }: SearchPageProps) {
@@ -22,21 +23,52 @@ export function SearchPage({ onNavigate, onAddToWorkspace }: SearchPageProps) {
   const [searched, setSearched] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [added, setAdded] = useState<Set<string>>(new Set());
+  const [error, setError] = useState('');
+  const [yearsBack, setYearsBack] = useState(10);
+  const [openAccessOnly, setOpenAccessOnly] = useState(false);
 
-  const doSearch = (q: string) => {
+  const doSearch = useCallback(async (q: string) => {
     if (!q.trim()) return;
-    setQuery(q); setLoading(true); setSearched(true);
-    setTimeout(() => { setResults(generateResults()); setLoading(false); }, 1100);
-  };
+    setQuery(q);
+    setLoading(true);
+    setSearched(true);
+    setError('');
+
+    try {
+      const data = await searchPapers(q.trim(), { limit: 20, yearsBack });
+      let mapped: SearchResult[] = data.results.map((r) => ({
+        id: r.id,
+        title: r.title,
+        authors: r.authors,
+        abstract: r.abstract,
+        publicationVenue: r.publication_venue,
+        year: r.year,
+        tags: r.tags,
+        relevanceScore: r.relevance_score,
+        isOpenAccess: r.is_open_access,
+        pdfUrl: r.pdf_url,
+        url: r.url,
+      }));
+      if (openAccessOnly) {
+        mapped = mapped.filter((r) => r.isOpenAccess);
+      }
+      setResults(mapped);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Search failed');
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [yearsBack, openAccessOnly]);
 
   const handleAdd = (r: SearchResult) => {
+    if (!r.isOpenAccess) return;
     setAdded((p) => new Set(p).add(r.id));
-    onAddToWorkspace(r);
+    onAddToWorkspace([r]);
   };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg-base)' }}>
-      {/* Header */}
       <header className="border-b border-[color:var(--border)] sticky top-0 z-10" style={{ background: 'var(--bg-surface)' }}>
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
           <button onClick={() => onNavigate('landing')} className="flex items-center gap-1.5 text-sm text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] transition-colors">
@@ -44,7 +76,7 @@ export function SearchPage({ onNavigate, onAddToWorkspace }: SearchPageProps) {
           </button>
           <button onClick={() => onNavigate('landing')} className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-forest-800 dark:bg-forest-700 flex items-center justify-center">
-              <Leaf style={{ width: 13, height: 13 }} className="text-amber-300" />
+              <BookMarked style={{ width: 13, height: 13 }} className="text-amber-300" />
             </div>
             <span className="font-bold text-sm text-[color:var(--text-primary)] tracking-tight">ScholarSynth</span>
           </button>
@@ -56,7 +88,6 @@ export function SearchPage({ onNavigate, onAddToWorkspace }: SearchPageProps) {
       </header>
 
       <main className="flex-1 max-w-3xl mx-auto w-full px-6 py-10">
-        {/* Big search bar */}
         <div className="mb-8">
           <div className="relative">
             <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 ${loading ? 'text-amber-500 animate-pulse' : 'text-[color:var(--text-muted)]'}`} />
@@ -75,7 +106,6 @@ export function SearchPage({ onNavigate, onAddToWorkspace }: SearchPageProps) {
             )}
           </div>
 
-          {/* Trending + filters */}
           <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-[color:var(--text-muted)] font-medium">Trending:</span>
@@ -104,25 +134,45 @@ export function SearchPage({ onNavigate, onAddToWorkspace }: SearchPageProps) {
           <AnimatePresence>
             {showFilters && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                className="mt-3 p-4 rounded-xl border border-[color:var(--border)] grid grid-cols-3 gap-4"
+                className="mt-3 p-4 rounded-xl border border-[color:var(--border)] grid grid-cols-2 gap-4"
                 style={{ background: 'var(--bg-elevated)' }}
               >
-                {['Year', 'Domain', 'Sort'].map((label) => (
-                  <div key={label}>
-                    <label className="block text-xs font-semibold text-[color:var(--text-muted)] mb-1">{label}</label>
-                    <select className="w-full px-3 py-2 text-sm rounded-lg border border-[color:var(--border)] text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-forest-500/30"
-                      style={{ background: 'var(--bg-surface)' }}
-                    >
-                      <option>All</option>
-                    </select>
-                  </div>
-                ))}
+                <div>
+                  <label className="block text-xs font-semibold text-[color:var(--text-muted)] mb-1">Years back</label>
+                  <select
+                    value={yearsBack}
+                    onChange={(e) => setYearsBack(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-[color:var(--border)] text-[color:var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+                    style={{ background: 'var(--bg-surface)' }}
+                  >
+                    {[5, 10, 15, 20].map((y) => (
+                      <option key={y} value={y}>{y} years</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm text-[color:var(--text-secondary)] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={openAccessOnly}
+                      onChange={(e) => setOpenAccessOnly(e.target.checked)}
+                      className="rounded border-[color:var(--border)] text-forest-600 focus:ring-forest-500"
+                    />
+                    Open access only
+                  </label>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Results */}
+        {error && (
+          <div className="mb-6 flex items-start gap-2 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-sm text-red-700 dark:text-red-400">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            {error}
+          </div>
+        )}
+
         {!searched ? (
           <EmptySearch onTopic={doSearch} />
         ) : (
@@ -138,6 +188,10 @@ export function SearchPage({ onNavigate, onAddToWorkspace }: SearchPageProps) {
                   </div>
                 ))}
               </motion.div>
+            ) : results.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-[color:var(--text-muted)]">No papers found. Try a different query or broaden your filters.</p>
+              </div>
             ) : (
               <motion.div key="res" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
                 <p className="text-sm text-[color:var(--text-muted)] mb-1">
@@ -164,7 +218,9 @@ function EmptySearch({ onTopic }: { onTopic: (t: string) => void }) {
         <Search className="w-9 h-9 text-forest-600 dark:text-forest-400" />
       </div>
       <h2 className="text-2xl font-bold text-[color:var(--text-primary)] mb-2">Discover Research Papers</h2>
-      <p className="text-sm text-[color:var(--text-muted)] max-w-sm mx-auto mb-8">Search millions of papers, explore AI-generated summaries, and import them into your workspace.</p>
+      <p className="text-sm text-[color:var(--text-muted)] max-w-sm mx-auto mb-8">
+        Search Semantic Scholar for relevant papers. Open-access PDFs can be imported directly into your workspace.
+      </p>
       <div className="flex flex-wrap gap-2 justify-center">
         {TRENDING_TOPICS.map((t) => (
           <button key={t} onClick={() => onTopic(t)}
@@ -181,6 +237,8 @@ function EmptySearch({ onTopic }: { onTopic: (t: string) => void }) {
 
 function ResultCard({ result, added, onAdd }: { result: SearchResult; added: boolean; onAdd: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const canImport = result.isOpenAccess;
+
   return (
     <Card className="group">
       <div className="flex gap-4">
@@ -202,40 +260,37 @@ function ResultCard({ result, added, onAdd }: { result: SearchResult; added: boo
           <div className="flex flex-wrap gap-1.5 mt-3">
             {result.year && <Badge variant="muted"><Calendar className="w-3 h-3 mr-1" />{result.year}</Badge>}
             {result.publicationVenue && <Badge variant="muted"><Building2 className="w-3 h-3 mr-1" />{result.publicationVenue}</Badge>}
-            {result.isOpenAccess && <Badge variant="success" dot>Open Access</Badge>}
-            {result.tags.slice(0,3).map((t) => <Badge key={t} variant="forest">{t}</Badge>)}
+            {result.isOpenAccess ? <Badge variant="success" dot>Open Access</Badge> : <Badge variant="muted">Paywalled</Badge>}
+            {result.tags.slice(0,2).map((t) => <Badge key={t} variant="forest">{t}</Badge>)}
           </div>
 
-          <p className={`mt-3 text-sm text-[color:var(--text-secondary)] leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>{result.abstract}</p>
-          <button onClick={() => setExpanded(!expanded)} className="text-xs text-forest-600 dark:text-forest-400 hover:text-forest-800 dark:hover:text-forest-300 mt-1 font-medium">
-            {expanded ? 'Show less' : 'Show more'}
-          </button>
+          {result.abstract && (
+            <>
+              <p className={`mt-3 text-sm text-[color:var(--text-secondary)] leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>{result.abstract}</p>
+              <button onClick={() => setExpanded(!expanded)} className="text-xs text-forest-600 dark:text-forest-400 hover:text-forest-800 dark:hover:text-forest-300 mt-1 font-medium">
+                {expanded ? 'Show less' : 'Show more'}
+              </button>
+            </>
+          )}
 
           <div className="flex items-center gap-2 mt-4">
             <button
-              onClick={onAdd} disabled={added}
-              className={`btn text-xs px-3 py-2 gap-1.5 ${added ? 'btn-secondary opacity-70 cursor-default' : 'btn-primary'}`}
+              onClick={onAdd}
+              disabled={added || !canImport}
+              title={canImport ? 'Download and index this paper' : 'No open-access PDF available'}
+              className={`btn text-xs px-3 py-2 gap-1.5 ${added ? 'btn-secondary opacity-70 cursor-default' : canImport ? 'btn-primary' : 'btn-secondary opacity-50 cursor-not-allowed'}`}
             >
               <BookmarkPlus className="w-3.5 h-3.5" />
-              {added ? 'Added' : 'Add to Workspace'}
+              {added ? 'Importing…' : canImport ? 'Add to Workspace' : 'No PDF available'}
             </button>
-            <button className="btn-secondary text-xs px-3 py-2 gap-1.5">
-              <ExternalLink className="w-3.5 h-3.5" /> View
-            </button>
+            {result.url && (
+              <a href={result.url} target="_blank" rel="noopener noreferrer" className="btn-secondary text-xs px-3 py-2 gap-1.5">
+                <ExternalLink className="w-3.5 h-3.5" /> View
+              </a>
+            )}
           </div>
         </div>
       </div>
     </Card>
   );
-}
-
-function generateResults(): SearchResult[] {
-  const pool = [
-    { title: 'Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks', authors: ['Patrick Lewis','Ethan Perez','Aleksandra Piktus'], abstract: 'Large pre-trained language models store factual knowledge in their parameters and achieve SOTA on downstream NLP tasks, but struggle on knowledge-intensive tasks. We propose RAG — combining parametric and non-parametric memory for language generation.', venue: 'NeurIPS 2020', year: 2020, tags: ['RAG','NLP','Retrieval'], open: true },
-    { title: 'An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale', authors: ['Alexey Dosovitskiy','Lucas Beyer','Alexander Kolesnikov'], abstract: 'We show that a pure transformer applied directly to sequences of image patches performs very well on image classification tasks, achieving SOTA with less compute than CNNs.', venue: 'ICLR 2021', year: 2021, tags: ['Vision Transformer','Computer Vision','Attention'], open: true },
-    { title: 'Chain-of-Thought Prompting Elicits Reasoning in Large Language Models', authors: ['Jason Wei','Xuezhi Wang','Dale Schuurmans'], abstract: 'We explore chain-of-thought prompting, decomposing multi-step problems into intermediate reasoning steps. Significant improvements on arithmetic, commonsense, and symbolic reasoning benchmarks.', venue: 'NeurIPS 2022', year: 2022, tags: ['Prompting','Reasoning','LLM'], open: true },
-    { title: 'Denoising Diffusion Probabilistic Models', authors: ['Jonathan Ho','Ajay Jain','Pieter Abbeel'], abstract: 'We present high-quality image synthesis using diffusion probabilistic models, achieving SOTA FID on CIFAR-10 and competitive log-likelihoods on LSUN.', venue: 'NeurIPS 2020', year: 2020, tags: ['Diffusion','Generative Models'], open: false },
-    { title: 'Graph Attention Networks', authors: ['Petar Veličković','Guillem Cucurull'], abstract: 'Novel neural network architectures that operate on graph-structured data by leveraging masked self-attentional layers. SOTA results on citation network and protein interface tasks.', venue: 'ICLR 2018', year: 2018, tags: ['Graph Neural Networks','Attention'], open: true },
-  ];
-  return pool.map((p, i) => ({ id: generateId(), title: p.title, authors: p.authors, abstract: p.abstract, publicationVenue: p.venue, year: p.year, tags: p.tags, relevanceScore: 0.97 - i * 0.07, isOpenAccess: p.open }));
 }
