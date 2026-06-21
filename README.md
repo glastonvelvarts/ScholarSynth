@@ -1,337 +1,393 @@
-# scholarsynth
+# ScholarSynth
 
-scholarsynth is a research paper RAG (Retrieval-Augmented Generation) system that enables users to upload one or more research papers, generate embeddings, store them in a vector database, and perform semantic retrieval over the uploaded documents.
-
-## Current Pipeline
+ScholarSynth is a full-stack research assistant: upload PDFs or import open-access papers from Semantic Scholar, index them in Milvus, and ask questions with **grounded answers and page-level citations** powered by dense retrieval + Modal-hosted vLLM.
 
 ```text
-PDF
- ↓
-pdf_reader.py            # column-aware text + table extraction (PyMuPDF)
- ↓
-chunker.py               # semantic chunking + typed chunks
-                         #   prose | table | reference | metadata
-                         # citations preserved separately
- ↓
-embedder.py (BGE-M3)     # embeds citation-stripped text
- ↓
-Milvus (HNSW, COSINE)    # vector store + typed metadata
- ↓
-retrieval/retriever.py   # dense ANN -> CrossEncoder rerank
-                         #   + chunk-type filter
-                         #   + low-confidence gating
+┌─────────────┐     /api/*      ┌──────────────────┐     Milvus      ┌─────────────┐
+│  Frontend   │ ──────────────► │  FastAPI (8080)  │ ◄──────────────►│  Vector DB  │
+│  Vite/React │                 │  scholarsynth.api│                 │  BGE-M3     │
+└─────────────┘                 └────────┬─────────┘                 └─────────────┘
+                                         │
+                                         │  /v1/chat/completions
+                                         ▼
+                                ┌──────────────────┐
+                                │  Modal + vLLM    │
+                                │  Qwen2.5-Coder   │
+                                │  (L40S GPU)      │
+                                └──────────────────┘
 ```
+
+---
 
 ## Features
 
-* Column-aware PDF extraction with table detection (markdown output)
-* Semantic sentence-boundary chunking, not fixed character windows
-* Typed chunks: prose / table / reference / metadata
-* Citation extraction — embeddings use clean text, originals kept for display
-* BGE-M3 dense embeddings (multilingual, 1024-dim, normalized)
-* Optional BGE-Reranker-v2-m3 cross-encoder rerank
-* Low-confidence threshold returns "no match" instead of misleading top hits
-* Configurable query instruction prefix (for E5 / jina / older BGE models)
-* Milvus 2.5 (HNSW, COSINE) with strict schema
-* GPU acceleration when CUDA is available
+### Ingestion
+- Column-aware PDF extraction with table detection (PyMuPDF)
+- Semantic sentence-boundary chunking (not fixed character windows)
+- Typed chunks: `prose` | `table` | `reference` | `metadata`
+- Citation extraction — embeddings use clean text; originals kept for display
+- BGE-M3 dense embeddings (1024-dim, COSINE, HNSW in Milvus)
+- Upload up to 10 PDFs via the web UI or API
+
+### Retrieval
+- Dense ANN search → BGE-Reranker-v2-m3 cross-encoder rerank
+- Chunk-type filtering (metadata excluded by default)
+- **Vectorless broad retrieval** for general synthesis queries (see below)
+- Confidence score is informational — **never blocks LLM generation** when context exists
+
+### Generation (RAG)
+- Retrieved excerpts + user question sent to vLLM on Modal
+- Separate system prompts for pinpoint Q&A vs cross-paper synthesis
+- Inline citations as `[DocumentName, p.X]`
+- Low-confidence retrieval still generates an answer from available context
+
+### Paper Discovery
+- Semantic Scholar search (`query.py` / `/api/search`)
+- Import open-access PDFs directly into the workspace (`/api/papers/import`)
+- Only downloads papers the user selects that have an available PDF
+
+### Frontend
+- React + Vite + Tailwind workspace UI
+- Upload modal with live processing steps
+- Chat panel with citation explorer
+- Paper search page with filters (year, open-access)
+
+---
+
+## RAG Pipeline
+
+```text
+User question
+     ↓
+query_router.py          # general vs specific query?
+     ↓
+┌────────────────────────────────────────────────────────────┐
+│  Specific query (e.g. "What F1 score was reported?")       │
+│    → Milvus dense search (top_k=5, candidate_k=20)         │
+│    → BGE reranker                                          │
+├────────────────────────────────────────────────────────────┤
+│  General query (e.g. "Summarize all uploaded papers")      │
+│    → Milvus dense search (top_k=10, candidate_k=30)        │
+│    → Vectorless broad retrieval (retrieve_broad)           │
+│         samples early prose chunks from each document       │
+│         without relying on query↔chunk similarity           │
+│    → merge + dedupe chunks                                 │
+└────────────────────────────────────────────────────────────┘
+     ↓
+generator.py             # build context prompt + call Modal vLLM
+     ↓
+Answer with citations
+```
+
+### Vectorless retrieval
+
+General questions like *"Summarize all uploaded papers"* or *"Compare methodologies"* don't align well with dense vector similarity — the query is meta-level, not semantically close to any single chunk. ScholarSynth handles this with **`retrieve_broad()`** in `scholarsynth/retrieval/retriever.py`:
+
+1. **`query_router.py`** detects general queries via keyword patterns (`summarize`, `compare`, `all papers`, `overview`, etc.).
+2. **`retrieve_broad()`** fetches the first N prose chunks per indexed document ordered by page — no embedding search involved.
+3. Broad chunks are **merged** with dense-retrieval results (deduped by `chunk_id`).
+4. vLLM receives a wider, document-representative context and uses the **synthesis system prompt** (`RAG_SYNTHESIS_PROMPT`).
+
+Confidence gating (`score_threshold=0.45`) still runs for logging and the `confident` API field, but **does not skip generation**. vLLM is only skipped when the index is completely empty.
+
+### CLI
+
+```bash
+uv run python -m scholarsynth.rag.pipeline "Summarize all uploaded papers"
+```
+
+---
+
+## Modal (vLLM)
+
+Generation runs on **Modal** using **vLLM** with an OpenAI-compatible API.
+
+| Setting | Default |
+|---|---|
+| App name | `scholarsynth-vllm` |
+| GPU | NVIDIA L40S |
+| HF model | `Qwen/Qwen2.5-Coder-7B-Instruct` |
+| Served name | `qwen-coder-7b` |
+| Port | 8000 (proxied by Modal web server) |
+
+### Auth
+
+Modal reads `~/.modal.toml`, not `.env`:
+
+```bash
+modal token set --token-id <MODAL_TOKEN_ID> --token-secret <MODAL_TOKEN_SECRET>
+```
+
+On WSL, if you see `\r` errors in headers, fix Windows line endings: `dos2unix .env`
+
+### Deploy (persistent URL)
+
+```bash
+uv run modal deploy model.py
+```
+
+Output example:
+
+```text
+https://<workspace>--scholarsynth-vllm-serve.modal.run
+```
+
+Set in `.env`:
+
+```bash
+SCHOLARSYNTH_VLLM_BASE_URL=https://<workspace>--scholarsynth-vllm-serve.modal.run/v1
+```
+
+**Important:** the URL must include your workspace prefix (`<workspace>--`). A bare `scholarsynth-vllm-serve.modal.run` URL will 404.
+
+### Dev (ephemeral URL)
+
+```bash
+uv run modal serve model.py
+```
+
+Updates `.env` with the printed URL each session.
+
+### Stop / restart
+
+```bash
+uv run modal app list
+uv run modal app stop scholarsynth-vllm      # stop containers
+uv run modal deploy model.py               # redeploy
+uv run modal app logs scholarsynth-vllm    # tail logs
+```
+
+First request after idle triggers a **cold start** (GPU spin-up + model load) and can take several minutes.
+
+Override the HF model for research-focused Q&A:
+
+```bash
+export SCHOLARSYNTH_VLLM_HF_MODEL=Qwen/Qwen3-8B
+export SCHOLARSYNTH_VLLM_SERVED_MODEL=qwen3-8b
+uv run modal deploy model.py
+```
+
+---
+
+## Quick Start (full stack)
+
+### 1. Install
+
+```bash
+git clone https://github.com/<username>/scholarsynth.git
+cd scholarsynth
+uv sync
+cd Frontend && npm install && cd ..
+```
+
+### 2. Environment
+
+Create `.env` in the project root:
+
+```bash
+SCHOLAR_API_KEY=<your-semantic-scholar-key>
+SCHOLARSYNTH_VLLM_BASE_URL=https://<workspace>--scholarsynth-vllm-serve.modal.run/v1
+```
+
+Optional:
+
+```bash
+SCHOLARSYNTH_MILVUS_URI=http://localhost:19530
+SCHOLARSYNTH_SCORE_THRESHOLD=0.45
+SCHOLARSYNTH_RERANK=1
+SCHOLARSYNTH_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+SCHOLARSYNTH_API_PORT=8080
+```
+
+### 3. Milvus
+
+```bash
+docker compose up -d
+```
+
+### 4. Modal vLLM
+
+```bash
+uv run modal deploy model.py
+```
+
+### 5. Run (two terminals)
+
+**Terminal 1 — API:**
+
+```bash
+uv run python -m scholarsynth.api
+# → http://0.0.0.0:8080
+```
+
+**Terminal 2 — Frontend:**
+
+```bash
+cd Frontend
+npm run dev
+# → http://localhost:5173  (proxies /api → :8080)
+```
+
+Open `http://localhost:5173`. Upload PDFs or search Semantic Scholar, then chat.
+
+---
+
+## API Reference
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/query` | RAG Q&A over indexed papers |
+| `POST` | `/api/search` | Semantic Scholar paper search |
+| `POST` | `/api/papers/upload` | Upload PDFs (multipart, max 10) |
+| `POST` | `/api/papers/import` | Download + index open-access papers by ID |
+| `GET` | `/api/papers` | List indexed documents |
+| `GET` | `/api/jobs/{job_id}` | Poll upload/import processing status |
+
+### Example: query
+
+```bash
+curl -X POST http://localhost:8080/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Summarize all uploaded papers", "top_k": 5}'
+```
+
+### Example: search
+
+```bash
+curl -X POST http://localhost:8080/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Vision Transformers", "limit": 20, "years_back": 10}'
+```
+
+### Example: import paper
+
+```bash
+curl -X POST http://localhost:8080/api/papers/import \
+  -H "Content-Type: application/json" \
+  -d '{"paper_ids": ["<semantic-scholar-paper-id>"]}'
+```
+
+Upload/import jobs run in the background. Poll `/api/jobs/{job_id}` until `status` is `completed`.
+
+---
+
+## Offline / CLI Pipeline
+
+For batch processing without the web UI:
+
+```text
+PDF
+ ↓  pdf_reader.py
+JSON document
+ ↓  chunker.py
+chunked_data/chunked.json
+ ↓  embedder.py (BGE-M3)
+embedded_data/embedded_chunks.json
+ ↓  vectorstore/ingest.py
+Milvus collection "papersynth"
+```
+
+```bash
+uv run python read.py path/to/paper.pdf
+uv run python -m scholarsynth.chunker
+uv run python -m scholarsynth.embedder
+uv run python -m scholarsynth.vectorstore.ingest
+```
+
+Semantic Scholar CSV export:
+
+```bash
+uv run python query.py "voice conversion using AI" --limit 100 -o results.csv
+```
 
 ---
 
 ## Project Structure
 
 ```text
-scholarsynth/
-│
-├── chunked_data/
-│   └── chunked.json
-│
-├── embedded_data/
-│   └── embedded_chunks.json
-│
-├── outputs/
-│
+ScholarSynth/
+├── Frontend/                  # React + Vite UI
+│   └── src/
+│       ├── components/        # Landing, Search, Workspace
+│       └── lib/api.ts         # API client
 ├── scholarsynth/
+│   ├── api.py                 # FastAPI server
+│   ├── processing.py          # PDF → chunk → embed → ingest
+│   ├── semantic_search.py     # Semantic Scholar search + PDF download
+│   ├── jobs.py                # Background job tracker
 │   ├── pdf_reader.py
-│   ├── page_extractor.py
-│   ├── text_cleaner.py
 │   ├── chunker.py
 │   ├── embedder.py
-│   │
+│   ├── rag/
+│   │   ├── pipeline.py        # RAG orchestration
+│   │   ├── generator.py       # vLLM answer synthesis
+│   │   ├── query_router.py    # General vs specific query detection
+│   │   ├── milvus_retriever.py
+│   │   └── prompts.py
+│   ├── retrieval/
+│   │   └── retriever.py       # Dense + rerank + retrieve_broad (vectorless)
 │   └── vectorstore/
-│       ├── client.py
-│       ├── schema.py
-│       └── ingest.py
-│
-├── tests/
-├── docker-compose.yml
+├── model.py                   # Modal vLLM deployment
+├── query.py                   # Semantic Scholar CLI
+├── docker-compose.yml         # Milvus stack
 ├── pyproject.toml
-└── README.md
+└── .env
 ```
 
 ---
-
-## Installation
-
-### Clone Repository
-
-```bash
-git clone https://github.com/<username>/scholarsynth.git
-cd scholarsynth
-```
-
-### Install Dependencies
-
-```bash
-uv sync
-```
-
-Or install packages manually:
-
-```bash
-uv add pymupdf
-uv add sentence-transformers
-uv add pymilvus
-uv add torch
-```
-
----
-
-## PDF Extraction
-
-Run the PDF reader:
-
-```bash
-uv run python -m scholarsynth.pdf_reader <pdf_file>
-```
-
-Example:
-
-```bash
-uv run python -m scholarsynth.pdf_reader Automating_Customer_Service_Using_Langchain.pdf
-```
-
-Output:
-
-```text
-outputs/
-└── Automating_Customer_Service_Using_Langchain.pdf.json
-```
-
----
-
-## Chunk Documents
-
-Generate chunks from extracted documents:
-
-```bash
-uv run python -m scholarsynth.chunker
-```
-
-Output:
-
-```text
-chunked_data/
-└── chunked.json
-```
-
-Default Configuration:
-
-```python
-DEFAULT_MAX_CHUNK_CHARS = 1500     # hard cap per chunk
-DEFAULT_MIN_CHUNK_CHARS = 200      # merge small chunks under this
-DEFAULT_BREAKPOINT_PERCENTILE = 90 # split where embedding distance is in the top 10%
-```
-
-Each chunk also stores:
-
-```python
-{
-  "chunk_type": "prose" | "table" | "reference" | "metadata",
-  "text":            "...",           # original text (for display)
-  "text_clean":      "...",           # citation-stripped (for embedding)
-  "citations":       ["[1]", "(Smith, 2020)"],
-  "table_markdown":  "| Model | F1 |\n| ...",  # only for tables
-  "section":         "IV. RESULTS",
-  "page": 3, "page_end": 4
-}
-```
-
----
-
-## Generate Embeddings
-
-Embedding Model:
-
-```text
-BAAI/bge-m3
-```
-
-Generate embeddings:
-
-```bash
-uv run python -m scholarsynth.embedder
-```
-
-Output:
-
-```text
-embedded_data/
-└── embedded_chunks.json
-```
-
-GPU acceleration is automatically enabled when CUDA is available.
-
----
-
-## Start Milvus
-
-Launch Milvus using Docker Compose:
-
-```bash
-docker compose up -d
-```
-
-Verify running containers:
-
-```bash
-docker ps
-```
-
-Expected containers:
-
-```text
-milvus-standalone
-milvus-etcd
-milvus-minio
-```
-
----
-
-## Ingest Embeddings into Milvus
-
-Insert generated embeddings into the vector database:
-
-```bash
-uv run python -m scholarsynth.vectorstore.ingest
-```
-
-Example Output:
-
-```text
-Connected to Milvus
-Created collection 'papersynth'
-Inserted 18 chunks successfully
-Collection now contains 18 entities
-```
-
----
-
-## Milvus Configuration
-
-### Collection
-
-```text
-papersynth
-```
-
-### Schema
-
-```text
-chunk_id
-document_name
-page
-text
-embedding
-```
-
-### Embedding Dimension
-
-```text
-1024
-```
-
-### Similarity Metric
-
-```text
-COSINE
-```
-
-### Index Type
-
-```text
-HNSW
-```
-
----
-
-## Current Status
-
-### ✅ Completed
-
-* PDF Extraction
-* Document Chunking
-* Embedding Generation
-* Milvus Integration
-* Vector Ingestion
-
-### ✅ Recently Added
-
-* Table-aware PDF extraction
-* Semantic sentence-boundary chunking
-* Typed chunks (prose / table / reference / metadata)
-* Citation extraction and preservation
-* CrossEncoder reranking
-* Low-confidence gating
-
-### 🚧 Next Steps
-
-* Hybrid retrieval (BM25 + dense fusion)
-* Multi-PDF comparison and session isolation
-* LLM answer synthesis with citation attribution
-* Reference resolution: `[1]` → full bibliographic entry
-* Migrate Milvus stack to single-node Qdrant for simpler ops
 
 ## Retrieval Configuration
 
 ```python
-from scholarsynth.retrieval.retriever import retrieve, RetrievalConfig
+from scholarsynth.retrieval.retriever import retrieve, retrieve_broad, RetrievalConfig
 
+# Specific factual query
 response = retrieve(
-    query="how were the models evaluated?",
+    "how were the models evaluated?",
     config=RetrievalConfig(
         top_k=5,
-        candidate_k=20,             # candidates fetched before rerank
-        score_threshold=0.45,       # dense score under this -> "no match"
-        rerank=True,                # BGE-reranker-v2-m3 cross-encoder
+        candidate_k=20,
+        score_threshold=0.45,
+        rerank=True,
         exclude_chunk_types=("metadata",),
-        document_filter=None,       # or "Some_Paper.pdf"
     ),
 )
 
-if not response.confident:
-    print(response.message)        # honest "not found" instead of garbage
-for chunk in response.results:
-    print(chunk.chunk_type, chunk.page, chunk.text[:120])
+# Vectorless broad sampling (used automatically for general queries)
+broad = retrieve_broad(chunks_per_doc=3, max_total=12)
 ```
 
 Environment overrides:
 
 ```bash
 export SCHOLARSYNTH_MILVUS_URI=http://localhost:19530
-export SCHOLARSYNTH_QUERY_PREFIX=""           # set for E5/jina models
+export SCHOLARSYNTH_QUERY_PREFIX=""
 export SCHOLARSYNTH_SCORE_THRESHOLD=0.45
-export SCHOLARSYNTH_RERANK=1                  # 0 to disable
+export SCHOLARSYNTH_RERANK=1
+export SCHOLARSYNTH_VLLM_SERVED_MODEL=qwen-coder-7b
+export SCHOLARSYNTH_VLLM_TIMEOUT=120
 ```
 
-## Resetting the Index
+---
 
-The Milvus schema changed (new `chunk_type`, `table_markdown`, `page_end`,
-`section` fields). After pulling these changes:
+## Milvus
+
+| Setting | Value |
+|---|---|
+| Collection | `papersynth` |
+| Metric | COSINE |
+| Index | HNSW |
+| Embedding dim | 1024 |
+
+Schema fields: `chunk_id`, `document_name`, `page`, `page_end`, `section`, `chunk_type`, `text`, `citations`, `table_markdown`, `embedding`
+
+### Reset index
 
 ```bash
-uv run python -m scholarsynth.vectorstore.drop_collection
-docker compose restart milvus-standalone     # optional, only if cache is stale
-uv run python -m scholarsynth.pdf_reader <pdf>
+uv run python tests/drop_collection.py
+docker compose restart milvus-standalone
+uv run python read.py <pdf>
 uv run python -m scholarsynth.chunker
 uv run python -m scholarsynth.embedder
 uv run python -m scholarsynth.vectorstore.ingest
@@ -339,19 +395,36 @@ uv run python -m scholarsynth.vectorstore.ingest
 
 ---
 
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Vite `ECONNREFUSED` on `/api/*` | Start the API: `uv run python -m scholarsynth.api` |
+| `\r` in header / API key error | `.strip()` is applied in code; also run `dos2unix .env` |
+| Modal 404 / invalid function call | URL missing workspace prefix — redeploy and copy full URL |
+| Chat timeout on first query | Modal cold start — wait 2–5 min, retry |
+| "No indexed documents" | Upload papers or run ingest pipeline; ensure Milvus is up |
+| Import fails "No open-access PDF" | Paper is paywalled — upload the PDF manually instead |
+
+---
+
 ## Technology Stack
 
-* Python
-* PyMuPDF
-* Sentence Transformers
-* BAAI BGE-M3
-* Milvus
-* Docker
-* PyTorch
-* UV Package Manager
+| Layer | Tech |
+|---|---|
+| Frontend | React, Vite, Tailwind, Framer Motion |
+| API | FastAPI, Uvicorn, python-multipart |
+| Extraction | PyMuPDF |
+| Embeddings | Sentence Transformers, BAAI/bge-m3 |
+| Reranker | BAAI/bge-reranker-v2-m3 |
+| Vector DB | Milvus 2.5 (Docker) |
+| LLM serving | Modal, vLLM, Qwen2.5-Coder-7B-Instruct |
+| RAG framework | LlamaIndex (retriever + OpenAILike LLM) |
+| Paper search | Semantic Scholar API |
+| Package manager | UV |
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License
