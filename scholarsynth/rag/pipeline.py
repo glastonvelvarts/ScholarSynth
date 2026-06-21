@@ -11,8 +11,9 @@ from llama_index.core.schema import NodeWithScore
 from llama_index.llms.openai_like import OpenAILike
 
 from scholarsynth.rag.generator import build_llm, generate_answer
-from scholarsynth.rag.milvus_retriever import MilvusRetriever
-from scholarsynth.retrieval.retriever import RetrievalConfig
+from scholarsynth.rag.milvus_retriever import MilvusRetriever, retrieval_response_to_nodes
+from scholarsynth.rag.query_router import is_general_query
+from scholarsynth.retrieval.retriever import RetrievalConfig, retrieve_broad
 
 load_dotenv()
 
@@ -60,11 +61,40 @@ def _nodes_to_sources(nodes: list[NodeWithScore]) -> list[SourceChunk]:
     return [_node_to_source(node) for node in nodes]
 
 
+def _merge_nodes(
+    primary: list[NodeWithScore],
+    extra: list[NodeWithScore],
+    *,
+    max_nodes: int = 12,
+) -> list[NodeWithScore]:
+    seen: set[str] = set()
+    merged: list[NodeWithScore] = []
+    for node in primary + extra:
+        cid = node.node.id_ or ""
+        if cid in seen:
+            continue
+        seen.add(cid)
+        merged.append(node)
+        if len(merged) >= max_nodes:
+            break
+    return merged
+
+
 def default_retrieval_config(
     *,
     document_filter: Optional[str] = None,
     top_k: int = 5,
+    general: bool = False,
 ) -> RetrievalConfig:
+    if general:
+        return RetrievalConfig(
+            top_k=max(top_k, 10),
+            candidate_k=30,
+            rerank=os.environ.get("SCHOLARSYNTH_RERANK", "1") == "1",
+            exclude_chunk_types=("metadata",),
+            score_threshold=float(os.environ.get("SCHOLARSYNTH_SCORE_THRESHOLD", "0.45")),
+            document_filter=document_filter,
+        )
     return RetrievalConfig(
         top_k=top_k,
         candidate_k=20,
@@ -80,37 +110,51 @@ def run_rag(
     *,
     retrieval_config: Optional[RetrievalConfig] = None,
     llm: Optional[OpenAILike] = None,
-    skip_generation_on_low_confidence: bool = True,
 ) -> RAGResponse:
     """
     ScholarSynth RAG pipeline:
-        1. Dense retrieval + rerank (Milvus / BGE)
-        2. Confidence gate
-        3. LlamaIndex-framed generation (Modal vLLM)
+        1. Dense retrieval (+ vectorless broad sampling for general queries)
+        2. Always generate via vLLM when any context is available
+        3. Confidence score is informational only — never blocks the LLM
     """
-    cfg = retrieval_config or default_retrieval_config()
+    general = is_general_query(query)
+    cfg = retrieval_config or default_retrieval_config(general=general)
+
     retriever = MilvusRetriever(config=cfg)
     retrieval_response, nodes = retriever.retrieve_with_response(query)
+
+    if general:
+        broad = retrieve_broad(cfg, chunks_per_doc=3, max_total=cfg.top_k)
+        nodes = _merge_nodes(nodes, retrieval_response_to_nodes(broad), max_nodes=cfg.top_k)
+
     sources = _nodes_to_sources(nodes)
 
-    if skip_generation_on_low_confidence and not retrieval_response.confident:
+    if not nodes:
         return RAGResponse(
             query=query,
-            answer=retrieval_response.message or "No confident matches found.",
-            sources=sources,
+            answer=(
+                "No indexed documents found. Upload papers to your workspace first, "
+                "then ask your question again."
+            ),
+            sources=[],
             confident=False,
             retrieval_message=retrieval_response.message,
             retrieval_score=retrieval_response.top_score,
             config=cfg,
         )
 
-    answer = generate_answer(query, nodes, llm=llm or build_llm())
+    answer = generate_answer(
+        query,
+        nodes,
+        llm=llm or build_llm(),
+        synthesis=general,
+    )
     return RAGResponse(
         query=query,
         answer=answer,
         sources=sources,
-        confident=retrieval_response.confident,
-        retrieval_message=retrieval_response.message,
+        confident=retrieval_response.confident or general,
+        retrieval_message=retrieval_response.message if not retrieval_response.confident and not general else None,
         retrieval_score=retrieval_response.top_score,
         config=cfg,
     )

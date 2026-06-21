@@ -11,7 +11,7 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.schema import NodeWithScore
 from llama_index.llms.openai_like import OpenAILike
 
-from scholarsynth.rag.prompts import RAG_SYSTEM_PROMPT
+from scholarsynth.rag.prompts import RAG_SYNTHESIS_PROMPT, RAG_SYSTEM_PROMPT
 
 load_dotenv()
 
@@ -74,16 +74,19 @@ def generate_answer(
     query: str,
     nodes: list[NodeWithScore],
     llm: Optional[OpenAILike] = None,
+    *,
+    synthesis: bool = False,
 ) -> str:
     """Call Modal-hosted vLLM with retrieved context."""
     client = llm or build_llm()
     user_prompt = build_context_prompt(query, nodes)
+    system_prompt = RAG_SYNTHESIS_PROMPT if synthesis else RAG_SYSTEM_PROMPT
 
     logger.info("Generating answer via vLLM at %s model=%s", VLLM_BASE_URL, VLLM_MODEL)
     try:
         response = client.chat(
             [
-                ChatMessage(role=MessageRole.SYSTEM, content=RAG_SYSTEM_PROMPT),
+                ChatMessage(role=MessageRole.SYSTEM, content=system_prompt),
                 ChatMessage(role=MessageRole.USER, content=user_prompt),
             ]
         )

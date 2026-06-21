@@ -296,6 +296,72 @@ def retrieve(query: str, config: Optional[RetrievalConfig] = None) -> RetrievalR
     )
 
 
+def retrieve_broad(
+    config: Optional[RetrievalConfig] = None,
+    *,
+    chunks_per_doc: int = 3,
+    max_total: int = 12,
+) -> RetrievalResponse:
+    """
+    Vectorless retrieval: sample early prose chunks from each indexed document.
+
+    Used for general synthesis queries where dense similarity to the question
+    is a poor signal (e.g. "summarize all papers").
+    """
+    cfg = config or RetrievalConfig(exclude_chunk_types=("metadata", "reference"))
+    client = _get_client()
+    _ensure_collection_loaded(client, COLLECTION_NAME)
+
+    excluded = ", ".join(f'"{ct}"' for ct in cfg.exclude_chunk_types) if cfg.exclude_chunk_types else ""
+    filter_expr = f"chunk_type not in [{excluded}]" if excluded else ""
+
+    rows = client.query(
+        collection_name=COLLECTION_NAME,
+        filter=filter_expr,
+        output_fields=list(DEFAULT_OUTPUT_FIELDS),
+        limit=16384,
+    )
+
+    by_doc: dict[str, list[dict]] = {}
+    for row in rows:
+        doc = row.get("document_name", "")
+        if doc:
+            by_doc.setdefault(doc, []).append(row)
+
+    selected: list[RetrievedChunk] = []
+    for doc_name in sorted(by_doc):
+        doc_rows = sorted(by_doc[doc_name], key=lambda r: (r.get("page", 0), r.get("chunk_id", "")))
+        for row in doc_rows[:chunks_per_doc]:
+            page = row.get("page", 0)
+            selected.append(
+                RetrievedChunk(
+                    chunk_id=row.get("chunk_id", ""),
+                    document_name=doc_name,
+                    page=int(page),
+                    page_end=int(row.get("page_end", page) or page),
+                    section=row.get("section") or None,
+                    chunk_type=row.get("chunk_type") or "prose",
+                    text=row.get("text", ""),
+                    citations=_parse_citations(row.get("citations")),
+                    table_markdown=row.get("table_markdown") or None,
+                    score=1.0,
+                )
+            )
+            if len(selected) >= max_total:
+                break
+        if len(selected) >= max_total:
+            break
+
+    return RetrievalResponse(
+        query="",
+        results=selected[:max_total],
+        top_score=1.0 if selected else 0.0,
+        confident=bool(selected),
+        message=None,
+        config=cfg,
+    )
+
+
 def _format_page(chunk: RetrievedChunk) -> str:
     return (
         str(chunk.page)
