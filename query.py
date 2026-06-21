@@ -9,10 +9,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_KEY = os.getenv("API_KEY")
+SCHOLAR_API_KEY = os.getenv("SCHOLAR_API_KEY")
 
-if not API_KEY:
-    raise ValueError("API_KEY not found in .env file")
+if not SCHOLAR_API_KEY:
+    raise ValueError("SCHOLAR_API_KEY not found in .env file")
 
 QUERY = '"voice conversion using AI"'
 YEARS_BACK = 10
@@ -24,7 +24,7 @@ BASE_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 # ----------------------------------------
 
 headers = {
-    "x-api-key": API_KEY
+    "x-api-key": SCHOLAR_API_KEY
 }
 
 current_year = datetime.now().year

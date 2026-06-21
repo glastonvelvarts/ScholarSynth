@@ -4,7 +4,7 @@ uv.lock
 pyproject.toml
 __pycache__/
 outputs/
-Project_api_key.txt
+Project_SCHOLAR_API_KEY.txt
 chunked_data/
 chunked_data
 embedded_data/
