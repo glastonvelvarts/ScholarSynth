@@ -2,10 +2,7 @@
 Modal deployment: vLLM OpenAI-compatible server on L40S (port 8000).
 
 Stack: Python 3.10 + CUDA 12.4 devel + vLLM 0.8.5 + Qwen2.5-7B-Instruct.
-
-Mistral v0.2/v0.3 on vLLM 0.8.5 auto-selects the mistral_common tokenizer, which
-requires tekken.json — not present on legacy Mistral checkpoints. Qwen2.5-7B is
-similar size/quality for RAG summarization and loads without tokenizer hacks.
+Qwen2.5-7B is a good model for RAG summarization and loads without tokenizer hacks.
 
 Deploy:
     modal deploy model.py
