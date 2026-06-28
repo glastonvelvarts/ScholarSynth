@@ -18,7 +18,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 VLLM_BASE_URL = (os.environ.get("SCHOLARSYNTH_VLLM_BASE_URL") or "http://localhost:8000/v1").strip()
-VLLM_MODEL = (os.environ.get("SCHOLARSYNTH_VLLM_SERVED_MODEL") or "qwen-coder-7b").strip()
+VLLM_MODEL = (os.environ.get("SCHOLARSYNTH_VLLM_SERVED_MODEL") or "qwen2.5-7b-instruct").strip()
 VLLM_API_KEY = (os.environ.get("SCHOLARSYNTH_VLLM_API_KEY") or "not-needed").strip()
 VLLM_TIMEOUT = float(os.environ.get("SCHOLARSYNTH_VLLM_TIMEOUT", "120"))
 

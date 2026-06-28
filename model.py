@@ -1,20 +1,17 @@
 """
 Modal deployment: vLLM OpenAI-compatible server on L40S (port 8000).
 
-Auth (Modal reads ~/.modal.toml, not .env):
-    modal token set --token-id <id> --token-secret <secret>
+Stack: Python 3.10 + CUDA 12.4 devel + vLLM 0.8.5 + Qwen2.5-7B-Instruct.
 
-    On WSL, if you sourced a Windows .env and see Invalid metadata ...\\r,
-    recreate ~/.modal.toml or run: dos2unix .env
+Mistral v0.2/v0.3 on vLLM 0.8.5 auto-selects the mistral_common tokenizer, which
+requires tekken.json — not present on legacy Mistral checkpoints. Qwen2.5-7B is
+similar size/quality for RAG summarization and loads without tokenizer hacks.
 
 Deploy:
     modal deploy model.py
 
-Dev (ephemeral URL):
-    modal serve model.py
-
-Then point ScholarSynth at the URL:
-    export SCHOLARSYNTH_VLLM_BASE_URL=https://<workspace>--scholarsynth-vllm-serve.modal.run/v1
+Logs:
+    modal app logs scholarsynth-vllm
 """
 
 from __future__ import annotations
@@ -29,27 +26,38 @@ VLLM_PORT = 8000
 GPU = "L40S"
 MINUTES = 60
 
-# Qwen3 has no 7B Coder checkpoint; Qwen2.5-Coder-7B is the best 7B coder fit for L40S.
-# For pure research Q&A you can override with Qwen/Qwen3-8B via SCHOLARSYNTH_VLLM_HF_MODEL.
 MODEL_NAME = os.environ.get(
     "SCHOLARSYNTH_VLLM_HF_MODEL",
-    "Qwen/Qwen2.5-Coder-7B-Instruct",
+    "Qwen/Qwen2.5-7B-Instruct",
 )
 SERVED_MODEL_NAME = os.environ.get(
     "SCHOLARSYNTH_VLLM_SERVED_MODEL",
-    "qwen-coder-7b",
+    "qwen2.5-7b-instruct",
 )
+
+VLLM_VERSION = os.environ.get("SCHOLARSYNTH_VLLM_VERSION", "0.8.5")
 
 hf_cache_vol = modal.Volume.from_name("scholarsynth-hf-cache", create_if_missing=True)
 vllm_cache_vol = modal.Volume.from_name("scholarsynth-vllm-cache", create_if_missing=True)
 
 vllm_image = (
-    modal.Image.debian_slim(python_version="3.12")
-    .pip_install(
-        "vllm==0.22.0",
-        "huggingface_hub[hf_transfer]==0.36.0",
+    modal.Image.from_registry(
+        "nvidia/cuda:12.4.0-devel-ubuntu22.04",
+        add_python="3.10",
     )
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .entrypoint([])
+    .pip_install(
+        f"vllm=={VLLM_VERSION}",
+        # vLLM 0.8.x breaks on transformers 5.x (all_special_tokens_extended removed).
+        "transformers>=4.51.0,<5.0.0",
+    )
+    .env(
+        {
+            "HF_XET_HIGH_PERFORMANCE": "1",
+            "VLLM_USE_V1": "0",
+            "VLLM_WORKER_MULTIPROC_METHOD": "spawn",
+        }
+    )
 )
 
 app = modal.App(APP_NAME)
@@ -69,8 +77,10 @@ app = modal.App(APP_NAME)
 @modal.web_server(port=VLLM_PORT, startup_timeout=15 * MINUTES)
 def serve():
     cmd = [
-        "vllm",
-        "serve",
+        "python",
+        "-m",
+        "vllm.entrypoints.openai.api_server",
+        "--model",
         MODEL_NAME,
         "--served-model-name",
         SERVED_MODEL_NAME,
@@ -83,21 +93,10 @@ def serve():
         "--gpu-memory-utilization",
         "0.90",
         "--max-model-len",
-        "32768",
-        "--enable-prefix-caching",
-        "--uvicorn-log-level",
-        "info",
+        "8192",
+        "--enforce-eager",
+        "--disable-log-requests",
     ]
-
-    if "Qwen3" in MODEL_NAME:
-        cmd.extend(
-            [
-                "--reasoning-parser",
-                "qwen3",
-                "--default-chat-template-kwargs",
-                '{"enable_thinking": false}',
-            ]
-        )
 
     print("Starting vLLM:", " ".join(cmd), flush=True)
     subprocess.Popen(cmd)

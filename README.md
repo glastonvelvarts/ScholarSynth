@@ -12,7 +12,7 @@ ScholarSynth is a full-stack research assistant: upload PDFs or import open-acce
                                          ▼
                                 ┌──────────────────┐
                                 │  Modal + vLLM    │
-                                │  Qwen2.5-Coder   │
+                                │  Mistral 7B      │
                                 │  (L40S GPU)      │
                                 └──────────────────┘
 ```
@@ -106,8 +106,13 @@ Generation runs on **Modal** using **vLLM** with an OpenAI-compatible API.
 |---|---|
 | App name | `scholarsynth-vllm` |
 | GPU | NVIDIA L40S |
-| HF model | `Qwen/Qwen2.5-Coder-7B-Instruct` |
-| Served name | `qwen-coder-7b` |
+| Python | 3.10 |
+| CUDA image | `nvidia/cuda:12.4.0-devel-ubuntu22.04` |
+| vLLM | `0.8.5` (legacy engine, `VLLM_USE_V1=0`) |
+| Transformers | `>=4.51,<5` (required — vLLM 0.8.x breaks on transformers 5.x) |
+| PyTorch | `2.6.0` (pulled by vLLM) |
+| HF model | `Qwen/Qwen2.5-7B-Instruct` |
+| Served name | `qwen2.5-7b-instruct` |
 | Port | 8000 (proxied by Modal web server) |
 
 ### Auth
@@ -159,11 +164,11 @@ uv run modal app logs scholarsynth-vllm    # tail logs
 
 First request after idle triggers a **cold start** (GPU spin-up + model load) and can take several minutes.
 
-Override the HF model for research-focused Q&A:
+Override the HF model if needed:
 
 ```bash
-export SCHOLARSYNTH_VLLM_HF_MODEL=Qwen/Qwen3-8B
-export SCHOLARSYNTH_VLLM_SERVED_MODEL=qwen3-8b
+export SCHOLARSYNTH_VLLM_HF_MODEL=Qwen/Qwen2.5-7B-Instruct
+export SCHOLARSYNTH_VLLM_SERVED_MODEL=qwen2.5-7b-instruct
 uv run modal deploy model.py
 ```
 
@@ -365,7 +370,7 @@ export SCHOLARSYNTH_MILVUS_URI=http://localhost:19530
 export SCHOLARSYNTH_QUERY_PREFIX=""
 export SCHOLARSYNTH_SCORE_THRESHOLD=0.45
 export SCHOLARSYNTH_RERANK=1
-export SCHOLARSYNTH_VLLM_SERVED_MODEL=qwen-coder-7b
+export SCHOLARSYNTH_VLLM_SERVED_MODEL=qwen2.5-7b-instruct
 export SCHOLARSYNTH_VLLM_TIMEOUT=120
 ```
 
@@ -418,7 +423,7 @@ uv run python -m scholarsynth.vectorstore.ingest
 | Embeddings | Sentence Transformers, BAAI/bge-m3 |
 | Reranker | BAAI/bge-reranker-v2-m3 |
 | Vector DB | Milvus 2.5 (Docker) |
-| LLM serving | Modal, vLLM, Qwen2.5-Coder-7B-Instruct |
+| LLM serving | Modal, vLLM, Qwen2.5-7B-Instruct |
 | RAG framework | LlamaIndex (retriever + OpenAILike LLM) |
 | Paper search | Semantic Scholar API |
 | Package manager | UV |
